@@ -41,19 +41,22 @@ void install_symbol(char *s, int type)
 int look_up_symbol(char *s)
 {
   int i;
+  printf("Find: %s\n", s);
 
   if (cur_counter == 0)
   {
-    printf("Variable not found.\n");
+    printf("No variables.\n");
     return(-1);
   }
   for (i = cur_counter - 1; i >= 0; i--)
   {
     if (!strcmp(s, table[i].name))
     {
+      printf("Index: %d.\n", i);
       return(i);
     }
   }
+  printf("Variable not found.\n");
   return(-1);
  }
 
@@ -87,7 +90,10 @@ void pop_up_symbol(int scope)
 void set_symbol(char *s, double val)
 {
   int index = look_up_symbol(s);
-  table[index].value = val;
+  if (index >= 0)
+  {
+    table[index].value = val;
+  }
 }
 
 /* Makes a copy of a string with known length */

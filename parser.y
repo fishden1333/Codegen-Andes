@@ -17,6 +17,7 @@
 
   int varType; // Variable type
   bool isFunc; // See if the variable is a function name
+  char *delimiter = " +-*/=,;()"; // Used for strtok
 %}
 
 %start program /* Starting symbol */
@@ -106,12 +107,22 @@ ID_declarations:
 ID_declaration:
     ID
     {
-      install_symbol($1, varType);
+      int index;
+      char *id;
+
+      id = strtok($1, delimiter);
+      install_symbol(id, varType);
+      set_symbol(id, 0);
     }
   | ID '=' expression
     {
-      install_symbol($1, varType);
-      set_symbol($1, $3);
+      int index;
+      int expr = $3;
+      char *id;
+
+      id = strtok($1, delimiter);
+      install_symbol(id, varType);
+      set_symbol(id, expr);
     }
   ;
 
@@ -272,6 +283,9 @@ func_statement:
 simple_statement:
     ID '=' expression ';'
     {
+      char *id;
+
+      id = strtok($1, delimiter);
       set_symbol($1, $3);
     }
   | ID stm_dimensions '=' expression ';'
@@ -361,6 +375,7 @@ digitalWrite_statement:
     {
       int r0 = $3;
       int r1 = $5;
+
       fprintf(f_asm, "  movi $r0, %d\n", r0);
       fprintf(f_asm, "  movi $r1, %d\n", r1);
       fprintf(f_asm, "  bal	digitalWrite\n");
@@ -371,6 +386,7 @@ delay_statement:
     DELAY '(' expression ')' ';'
     {
       int r0 = $3;
+
       fprintf(f_asm, "  movi $r0, %d\n", r0);
       fprintf(f_asm, "  bal	delay\n");
     }
@@ -395,14 +411,26 @@ expression:
   | ID
     {
       int index;
-      index = look_up_symbol($1);
-      $$ = table[index].value;
+      char *id;
+
+      id = strtok($1, delimiter);
+      index = look_up_symbol(id);
+      if (index >= 0)
+      {
+        $$ = table[index].value;
+      }
     }
   | '-' ID
     {
       int index;
-      index = look_up_symbol($2);
-      $$ = -1 * table[index].value;
+      char *id;
+
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index >= 0)
+      {
+        $$ = -1 * table[index].value;
+      }
     }
   | ID stm_dimensions
     {
@@ -536,6 +564,7 @@ int main()
     fprintf(stderr, "Can not open the file %s for writing.\n", "assembly");
   }
 
+  fprintf(f_asm, "\n");
   yyparse();
   printf("No syntax error!\n");
 
@@ -544,6 +573,9 @@ int main()
 
 int yyerror(char *s)
 {
-  fprintf(stderr, "Error at line %d: %s\n", ++numLines, s);
+  fprintf(stderr, "*** Error at line %d: %s\n", ++numLines, line);
+  fprintf(stderr, "\n");
+  fprintf(stderr, "Unmatched token: %s\n", yytext);
+  fprintf(stderr, "*** %s\n", s);
   exit(1);
 }

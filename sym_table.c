@@ -19,7 +19,7 @@ void init_symbol_table()
 }
 
 /* Install a symbol into the table */
-char *install_symbol(char *s)
+void install_symbol(char *s, int type)
 {
   if (cur_counter >= MAX_TABLE_SIZE)
   {
@@ -28,13 +28,13 @@ char *install_symbol(char *s)
   else
   {
     table[cur_counter].name = copys(s);
+    table[cur_counter].type = type;
     table[cur_counter].scope = cur_scope;
     table[cur_counter].offset = cur_counter;
     cur_counter++;
     printf("cur_counter = %d\n", cur_counter);
     printf("cur_scope = %d\n", cur_scope);
   }
-  return(s);
 }
 
 /* Return the symnol's index in the symbol table */

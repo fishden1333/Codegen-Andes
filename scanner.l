@@ -73,20 +73,20 @@ WHITESPACE [ \t\r]+
        yylval.intVal = 0;
        return INT_CONSTANT;}
 "digitalWrite" {print(id);
-                return ID;}
+                return DIGITALWRITE;}
 "delay" {print(id);
-         return ID;}
+         return DELAY;}
 
 "void" {print(key);
         return VOIDTYPE;}
 "int" {print(key);
-       return NONVOIDTYPE;}
+       return INTTYPE;}
 "double" {print(key);
-          return NONVOIDTYPE;}
+          return DOUBLETYPE;}
 "bool" {print(key);
-        return NONVOIDTYPE;}
+        return BOOLTYPE;}
 "char" {print(key);
-        return NONVOIDTYPE;}
+        return CHARTYPE;}
 
 "null" {print(key);
         yylval.intVal = 0;

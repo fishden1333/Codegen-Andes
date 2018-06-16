@@ -111,10 +111,14 @@ ID_declaration:
       if (doInst)
       {
         char *id;
+        int index;
 
         id = strtok($1, delimiter);
         install_symbol(id, varType);
         set_symbol(id, 0);
+        index = look_up_symbol(id);
+        fprintf(f_asm, "  movi $r0, 0\n");
+        fprintf(f_asm, "  swi $r0, [$sp + (%d)]\n", table[index].offset * 4);
       }
     }
   | ID '=' expression
@@ -123,10 +127,14 @@ ID_declaration:
       {
         int expr = $3;
         char *id;
+        int index;
 
         id = strtok($1, delimiter);
         install_symbol(id, varType);
         set_symbol(id, expr);
+        index = look_up_symbol(id);
+        fprintf(f_asm, "  movi $r0, %d\n", expr);
+        fprintf(f_asm, "  swi $r0, [$sp + (%d)]\n", table[index].offset * 4);
       }
     }
   ;
@@ -297,9 +305,14 @@ simple_statement:
       if (doInst)
       {
         char *id;
+        int index;
+        int expr = $3;
 
         id = strtok($1, delimiter);
-        set_symbol($1, $3);
+        set_symbol($1, expr);
+        index = look_up_symbol(id);
+        fprintf(f_asm, "  movi $r0, %d\n", expr);
+        fprintf(f_asm, "  swi $r0, [$sp + (%d)]\n", table[index].offset * 4);
       }
     }
   | ID stm_dimensions '=' expression ';'
@@ -322,7 +335,7 @@ if_statement:
     IF '(' expression ')' '{'
     {
       int expr = $3;
-      
+
       if (expr == 0)
       {
         doInst = false;

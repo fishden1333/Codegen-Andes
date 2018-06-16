@@ -19,6 +19,7 @@
   bool isFunc; // See if the variable is a function name
   char *delimiter = " +-*/=,;()"; // Used for strtok
   bool doInst = true; // For if-else, see if do if statement or else statement
+  int maxRegNum = -1; // The max register number, -1: no register used
 %}
 
 %start program /* Starting symbol */
@@ -117,8 +118,9 @@ ID_declaration:
         install_symbol(id, varType);
         set_symbol(id, 0);
         index = look_up_symbol(id);
-        fprintf(f_asm, "  movi $r0, 0\n");
-        fprintf(f_asm, "  swi $r0, [$sp + (%d)]\n", table[index].offset * 4);
+        // fprintf(f_asm, "  movi $r%d, 0\n", ++maxRegNum);
+        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+        maxRegNum--;
       }
     }
   | ID '=' expression
@@ -133,8 +135,9 @@ ID_declaration:
         install_symbol(id, varType);
         set_symbol(id, expr);
         index = look_up_symbol(id);
-        fprintf(f_asm, "  movi $r0, %d\n", expr);
-        fprintf(f_asm, "  swi $r0, [$sp + (%d)]\n", table[index].offset * 4);
+        // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
+        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+        maxRegNum--;
       }
     }
   ;
@@ -311,8 +314,9 @@ simple_statement:
         id = strtok($1, delimiter);
         set_symbol($1, expr);
         index = look_up_symbol(id);
-        fprintf(f_asm, "  movi $r0, %d\n", expr);
-        fprintf(f_asm, "  swi $r0, [$sp + (%d)]\n", table[index].offset * 4);
+        // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
+        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+        maxRegNum--;
       }
     }
   | ID stm_dimensions '=' expression ';'
@@ -344,6 +348,7 @@ if_statement:
       {
         doInst = true;
       }
+      maxRegNum--;
     }
     func_contents '}'
   | IF '(' expression ')' '{' '}'
@@ -387,7 +392,12 @@ default_statement:
   ;
 
 while_statement:
-    WHILE '(' expression ')' '{' func_contents '}'
+    WHILE '(' expression ')' '{'
+    {
+      fprintf(f_asm, "loop:\n");
+      int expr = $3;
+    }
+    func_contents '}'
   | WHILE '(' expression ')' '{' '}'
   ;
 
@@ -425,12 +435,8 @@ digitalWrite_statement:
     {
       if (doInst)
       {
-        int r0 = $3;
-        int r1 = $5;
-
-        fprintf(f_asm, "  movi $r0, %d\n", r0);
-        fprintf(f_asm, "  movi $r1, %d\n", r1);
         fprintf(f_asm, "  bal	digitalWrite\n");
+        maxRegNum = maxRegNum - 2;
       }
     }
   ;
@@ -440,10 +446,8 @@ delay_statement:
     {
       if (doInst)
       {
-        int r0 = $3;
-
-        fprintf(f_asm, "  movi $r0, %d\n", r0);
         fprintf(f_asm, "  bal	delay\n");
+        maxRegNum--;
       }
     }
   ;
@@ -460,14 +464,20 @@ expression:
     {
       if (doInst)
       {
-        $$ = $1;
+        int num = $1;
+
+        $$ = num;
+        fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
       }
     }
   | '-' CONSTANT
     {
       if (doInst)
       {
-        $$ = -1 * $2;
+        int num = -1 * $2;
+
+        $$ = num;
+        fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
       }
     }
   | ID
@@ -482,6 +492,7 @@ expression:
         if (index >= 0)
         {
           $$ = table[index].value;
+          fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
         }
       }
     }
@@ -497,6 +508,9 @@ expression:
         if (index >= 0)
         {
           $$ = -1 * table[index].value;
+          fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
+          fprintf(f_asm, "  movi $r%d, -1\n", maxRegNum + 1);
+          fprintf(f_asm, "  muli $r%d, $r%d, $r%d\n", maxRegNum, maxRegNum, maxRegNum + 1);
         }
       }
     }
@@ -534,6 +548,8 @@ expression:
       if (doInst)
       {
         $$ = $1 + $3;
+        fprintf(f_asm, "  add $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+        maxRegNum--;
       }
     }
   | expression '-' expression
@@ -541,6 +557,8 @@ expression:
       if (doInst)
       {
         $$ = $1 - $3;
+        fprintf(f_asm, "  sub $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+        maxRegNum--;
       }
     }
   | expression '*' expression
@@ -548,6 +566,8 @@ expression:
       if (doInst)
       {
         $$ = $1 * $3;
+        fprintf(f_asm, "  mul $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+        maxRegNum--;
       }
     }
   | expression '/' expression
@@ -555,6 +575,8 @@ expression:
       if (doInst)
       {
         $$ = $1 / $3;
+        fprintf(f_asm, "  divsr $r%d, $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1, maxRegNum);
+        maxRegNum--;
       }
     }
   | expression '%' expression
@@ -570,6 +592,7 @@ expression:
         {
           $$ = 0;
         }
+        maxRegNum--;
       }
     }
   | expression MOREEQUAL expression
@@ -584,6 +607,7 @@ expression:
         {
           $$ = 0;
         }
+        maxRegNum--;
       }
     }
   | expression EQUALEQUAL expression
@@ -598,6 +622,7 @@ expression:
         {
           $$ = 0;
         }
+        maxRegNum--;
       }
     }
   | expression NOTEQUAL expression
@@ -612,6 +637,7 @@ expression:
         {
           $$ = 0;
         }
+        maxRegNum--;
       }
     }
   | expression '<' expression
@@ -626,6 +652,7 @@ expression:
         {
           $$ = 0;
         }
+        maxRegNum--;
       }
     }
   | expression '>' expression
@@ -640,6 +667,7 @@ expression:
         {
           $$ = 0;
         }
+        maxRegNum--;
       }
     }
   | '!' expression

@@ -49,6 +49,7 @@ int look_up_symbol(char *s)
   {
     if (!strcmp(s, table[i].name))
     {
+      printf("Find variable: %s\n", table[i].name);
       return(i);
     }
   }

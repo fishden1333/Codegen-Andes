@@ -28,8 +28,6 @@ ID [_a-zA-Z][_a-zA-Z0-9]*
 INTEGER 0|[1-9]{DIGIT}*
 DOUBLE {DIGIT}*\.{DIGIT}+|{DIGIT}+\.{DIGIT}*
 SCI {DIGIT}+[eE][+-]?{DIGIT}+|{DOUBLE}[eE][+-]?{DIGIT}+
-CHAR '([^'])?'
-STRING \"([^"])*\"|\"\"
 WHITESPACE [ \t\r]+
 
 %%
@@ -291,13 +289,13 @@ WHITESPACE [ \t\r]+
       yylval.strVal = yytext;
       return ID;}
 
-{CHAR} {print(ch);
-        yylval.charVal = yytext[0];
-        return CHAR_CONSTANT;}
+'([^'])?' {print(ch);
+           yylval.charVal = yytext[0];
+           return CHAR_CONSTANT;}
 
-{STRING} {print(str);
-          yylval.strVal = yytext;
-          return STR_CONSTANT;}
+\"([^"])*\"|\"\" {print(str);
+                  yylval.strVal = yytext;
+                  return STR_CONSTANT;}
 
 {DIGIT}[a-zA-Z0-9]+ {print(error);}
 {DIGIT}+[eE][+-]?[a-zA-Z]+|{DOUBLE}[eE][+-]?[a-zA-Z]+ {print(error);}

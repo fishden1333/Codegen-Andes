@@ -32,8 +32,6 @@ void install_symbol(char *s, int type)
     table[cur_counter].scope = cur_scope;
     table[cur_counter].offset = cur_counter;
     cur_counter++;
-    printf("cur_counter = %d\n", cur_counter);
-    printf("cur_scope = %d\n", cur_scope);
   }
 }
 
@@ -41,7 +39,6 @@ void install_symbol(char *s, int type)
 int look_up_symbol(char *s)
 {
   int i;
-  printf("Find: %s\n", s);
 
   if (cur_counter == 0)
   {
@@ -52,7 +49,6 @@ int look_up_symbol(char *s)
   {
     if (!strcmp(s, table[i].name))
     {
-      printf("Index: %d.\n", i);
       return(i);
     }
   }
@@ -71,19 +67,16 @@ void pop_up_symbol(int scope)
   }
   for (i = cur_counter - 1; i >= 0; --i)
   {
-    printf("scope = %d\n", table[i].scope);
     if (table[i].scope != scope)
     {
       break;
     }
   }
-  printf("pop == %d\n", scope);
   if (i < 0)
   {
     cur_counter = 0;
   }
   cur_counter = i + 1;
-  printf("pop_cur_counter == %d\n", cur_counter);
 }
 
 /* Set up a variable */

@@ -18,6 +18,7 @@
   int varType; // Variable type
   bool isFunc; // See if the variable is a function name
   char *delimiter = " +-*/=,;()"; // Used for strtok
+  bool doInst = true; // For if-else, see if do if statement or else statement
 %}
 
 %start program /* Starting symbol */
@@ -48,13 +49,13 @@
 %left INTTYPE DOUBLETYPE CHARTYPE BOOLTYPE VOIDTYPE
 %left <charVal> ','
 %right <charVal> '='
-%left <charVal> OROR
-%left <charVal> ANDAND
+%left <strVal> OROR
+%left <strVal> ANDAND
 %right <charVal> '!'
-%left <charVal> ARITHCOMPARE
+%left <strVal> LESSEQUAL MOREEQUAL EQUALEQUAL NOTEQUAL '<' '>'
 %left <charVal> '+' '-'
 %left <charVal> '*' '/' '%'
-%left <charVal> PLUSPLUS MINUSMINUS
+%left <strVal> PLUSPLUS MINUSMINUS
 
 %%
 /* A program at least has a function definition */
@@ -107,22 +108,26 @@ ID_declarations:
 ID_declaration:
     ID
     {
-      int index;
-      char *id;
+      if (doInst)
+      {
+        char *id;
 
-      id = strtok($1, delimiter);
-      install_symbol(id, varType);
-      set_symbol(id, 0);
+        id = strtok($1, delimiter);
+        install_symbol(id, varType);
+        set_symbol(id, 0);
+      }
     }
   | ID '=' expression
     {
-      int index;
-      int expr = $3;
-      char *id;
+      if (doInst)
+      {
+        int expr = $3;
+        char *id;
 
-      id = strtok($1, delimiter);
-      install_symbol(id, varType);
-      set_symbol(id, expr);
+        id = strtok($1, delimiter);
+        install_symbol(id, varType);
+        set_symbol(id, expr);
+      }
     }
   ;
 
@@ -266,7 +271,13 @@ func_statement:
     simple_statement
   | func_invocation
   | if_statement else_statement
+    {
+      doInst = true;
+    }
   | if_statement
+    {
+      doInst = true;
+    }
   | switch_statement
   | while_statement
   | do_while_statement
@@ -283,10 +294,13 @@ func_statement:
 simple_statement:
     ID '=' expression ';'
     {
-      char *id;
+      if (doInst)
+      {
+        char *id;
 
-      id = strtok($1, delimiter);
-      set_symbol($1, $3);
+        id = strtok($1, delimiter);
+        set_symbol($1, $3);
+      }
     }
   | ID stm_dimensions '=' expression ';'
   ;
@@ -305,13 +319,36 @@ func_invocation:
   | ID '(' ')' ';'
 
 if_statement:
-    IF '(' expression ')' '{' func_contents '}'
+    IF '(' expression ')' '{'
+    {
+      int expr = $3;
+      
+      if (expr == 0)
+      {
+        doInst = false;
+      }
+      else
+      {
+        doInst = true;
+      }
+    }
+    func_contents '}'
   | IF '(' expression ')' '{' '}'
   ;
 
 else_statement:
-    ELSE '{' func_contents '}'
-  | ELSE '(' expression ')' '{' '}'
+    ELSE '{'
+    {
+      doInst = !doInst;
+    }
+    func_contents '}'
+    {
+      doInst = true;
+    }
+  | ELSE '{' '}'
+    {
+
+    }
   ;
 
 switch_statement:
@@ -373,22 +410,28 @@ continue_statement:
 digitalWrite_statement:
     DIGITALWRITE '(' expression ',' expression ')' ';'
     {
-      int r0 = $3;
-      int r1 = $5;
+      if (doInst)
+      {
+        int r0 = $3;
+        int r1 = $5;
 
-      fprintf(f_asm, "  movi $r0, %d\n", r0);
-      fprintf(f_asm, "  movi $r1, %d\n", r1);
-      fprintf(f_asm, "  bal	digitalWrite\n");
+        fprintf(f_asm, "  movi $r0, %d\n", r0);
+        fprintf(f_asm, "  movi $r1, %d\n", r1);
+        fprintf(f_asm, "  bal	digitalWrite\n");
+      }
     }
   ;
 
 delay_statement:
     DELAY '(' expression ')' ';'
     {
-      int r0 = $3;
+      if (doInst)
+      {
+        int r0 = $3;
 
-      fprintf(f_asm, "  movi $r0, %d\n", r0);
-      fprintf(f_asm, "  bal	delay\n");
+        fprintf(f_asm, "  movi $r0, %d\n", r0);
+        fprintf(f_asm, "  bal	delay\n");
+      }
     }
   ;
 
@@ -402,80 +445,202 @@ expressions:
 expression:
     CONSTANT
     {
-      $$ = $1;
+      if (doInst)
+      {
+        $$ = $1;
+      }
     }
   | '-' CONSTANT
     {
-      $$ = -1 * $2;
+      if (doInst)
+      {
+        $$ = -1 * $2;
+      }
     }
   | ID
     {
-      int index;
-      char *id;
-
-      id = strtok($1, delimiter);
-      index = look_up_symbol(id);
-      if (index >= 0)
+      if (doInst)
       {
-        $$ = table[index].value;
+        int index;
+        char *id;
+
+        id = strtok($1, delimiter);
+        index = look_up_symbol(id);
+        if (index >= 0)
+        {
+          $$ = table[index].value;
+        }
       }
     }
   | '-' ID
     {
-      int index;
-      char *id;
-
-      id = strtok($2, delimiter);
-      index = look_up_symbol(id);
-      if (index >= 0)
+      if (doInst)
       {
-        $$ = -1 * table[index].value;
+        int index;
+        char *id;
+
+        id = strtok($2, delimiter);
+        index = look_up_symbol(id);
+        if (index >= 0)
+        {
+          $$ = -1 * table[index].value;
+        }
       }
     }
   | ID stm_dimensions
     {
-      $$ = 0;
-    }
-  | ID '(' expressions ')'
-    {
-      $$ = 0;
-    }
-  | ID '(' ')'
-    {
-      $$ = 0;
-    }
-  | expression '=' expression
-    {
-      $1 = $3;
-      $$ = $1;
-    }
-  | expression '+' expression
-    {
-      $$ = $1 + $3;
-    }
-  | expression '-' expression
-    {
-      $$ = $1 - $3;
-    }
-  | expression '*' expression
-    {
-      $$ = $1 * $3;
-    }
-  | expression '/' expression
-    {
-      $$ = $1 / $3;
-    }
-  | expression '%' expression
-  | expression ARITHCOMPARE expression
-  | '!' expression
-    {
-      if ($2 != 0)
+      if (doInst)
       {
         $$ = 0;
       }
-      else
+    }
+  | ID '(' expressions ')'
+    {
+      if (doInst)
       {
-        $$ = 1;
+        $$ = 0;
+      }
+    }
+  | ID '(' ')'
+    {
+      if (doInst)
+      {
+        $$ = 0;
+      }
+    }
+  | expression '=' expression
+    {
+      if (doInst)
+      {
+        $1 = $3;
+        $$ = $1;
+      }
+    }
+  | expression '+' expression
+    {
+      if (doInst)
+      {
+        $$ = $1 + $3;
+      }
+    }
+  | expression '-' expression
+    {
+      if (doInst)
+      {
+        $$ = $1 - $3;
+      }
+    }
+  | expression '*' expression
+    {
+      if (doInst)
+      {
+        $$ = $1 * $3;
+      }
+    }
+  | expression '/' expression
+    {
+      if (doInst)
+      {
+        $$ = $1 / $3;
+      }
+    }
+  | expression '%' expression
+  | expression LESSEQUAL expression
+    {
+      if (doInst)
+      {
+        if ($1 <= $3)
+        {
+          $$ = 1;
+        }
+        else
+        {
+          $$ = 0;
+        }
+      }
+    }
+  | expression MOREEQUAL expression
+    {
+      if (doInst)
+      {
+        if ($1 >= $3)
+        {
+          $$ = 1;
+        }
+        else
+        {
+          $$ = 0;
+        }
+      }
+    }
+  | expression EQUALEQUAL expression
+    {
+      if (doInst)
+      {
+        if ($1 == $3)
+        {
+          $$ = 1;
+        }
+        else
+        {
+          $$ = 0;
+        }
+      }
+    }
+  | expression NOTEQUAL expression
+    {
+      if (doInst)
+      {
+        if ($1 != $3)
+        {
+          $$ = 1;
+        }
+        else
+        {
+          $$ = 0;
+        }
+      }
+    }
+  | expression '<' expression
+    {
+      if (doInst)
+      {
+        if ($1 < $3)
+        {
+          $$ = 1;
+        }
+        else
+        {
+          $$ = 0;
+        }
+      }
+    }
+  | expression '>' expression
+    {
+      if (doInst)
+      {
+        if ($1 > $3)
+        {
+          $$ = 1;
+        }
+        else
+        {
+          $$ = 0;
+        }
+      }
+    }
+  | '!' expression
+    {
+      if (doInst)
+      {
+        if ($2 != 0)
+        {
+          $$ = 0;
+        }
+        else
+        {
+          $$ = 1;
+        }
       }
     }
   | expression ANDAND expression
@@ -484,7 +649,10 @@ expression:
   | expression MINUSMINUS
   | '(' expression ')'
     {
-      $$ = $2;
+      if (doInst)
+      {
+        $$ = $2;
+      }
     }
   ;
 
@@ -507,7 +675,12 @@ arr_expression:
   | arr_expression '*' arr_expression
   | arr_expression '/' arr_expression
   | arr_expression '%' arr_expression
-  | arr_expression ARITHCOMPARE arr_expression
+  | arr_expression LESSEQUAL arr_expression
+  | arr_expression MOREEQUAL arr_expression
+  | arr_expression EQUALEQUAL arr_expression
+  | arr_expression NOTEQUAL arr_expression
+  | arr_expression '<' arr_expression
+  | arr_expression '>' arr_expression
   | '!' arr_expression
   | arr_expression ANDAND arr_expression
   | arr_expression OROR arr_expression
@@ -547,7 +720,12 @@ comment_content:
   | '/'
   | '%'
   | '='
-  | ARITHCOMPARE
+  | LESSEQUAL
+  | MOREEQUAL
+  | EQUALEQUAL
+  | NOTEQUAL
+  | '<'
+  | '>'
   | '!'
   | '?'
   ;

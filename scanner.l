@@ -241,13 +241,13 @@ WHITESPACE [ \t\r]+
 "--" {print(op);
       return MINUSMINUS;}
 "<=" {print(op);
-      return ARITHCOMPARE;}
+      return LESSEQUAL;}
 ">=" {print(op);
-      return ARITHCOMPARE;}
+      return MOREEQUAL;}
 "==" {print(op);
-      return ARITHCOMPARE;}
+      return EQUALEQUAL;}
 "!=" {print(op);
-      return ARITHCOMPARE;}
+      return NOTEQUAL;}
 "&&" {print(op);
       return ANDAND;}
 "||" {print(op);
@@ -263,9 +263,9 @@ WHITESPACE [ \t\r]+
 "%" {print(op);
      return '%';}
 "<" {print(op);
-     return ARITHCOMPARE;}
+     return '<';}
 ">" {print(op);
-     return ARITHCOMPARE;}
+     return '>';}
 "=" {print(op);
      return '=';}
 "!" {print(op);

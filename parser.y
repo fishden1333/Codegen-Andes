@@ -18,7 +18,6 @@
   int varType; // Variable type
   bool isFunc; // See if the variable is a function name
   char *delimiter = " +-*/=,;()"; // Used for strtok
-  bool doInst = true; // For if-else, see if do if statement or else statement
   int maxRegNum = -1; // The max register number, -1: no register used
 %}
 
@@ -109,36 +108,30 @@ ID_declarations:
 ID_declaration:
     ID
     {
-      if (doInst)
-      {
-        char *id;
-        int index;
+      char *id;
+      int index;
 
-        id = strtok($1, delimiter);
-        install_symbol(id, varType);
-        set_symbol(id, 0);
-        index = look_up_symbol(id);
-        // fprintf(f_asm, "  movi $r%d, 0\n", ++maxRegNum);
-        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
-        maxRegNum--;
-      }
+      id = strtok($1, delimiter);
+      install_symbol(id, varType);
+      set_symbol(id, 0);
+      index = look_up_symbol(id);
+      // fprintf(f_asm, "  movi $r%d, 0\n", ++maxRegNum);
+      fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+      maxRegNum--;
     }
   | ID '=' expression
     {
-      if (doInst)
-      {
-        int expr = $3;
-        char *id;
-        int index;
+      int expr = $3;
+      char *id;
+      int index;
 
-        id = strtok($1, delimiter);
-        install_symbol(id, varType);
-        set_symbol(id, expr);
-        index = look_up_symbol(id);
-        // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
-        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
-        maxRegNum--;
-      }
+      id = strtok($1, delimiter);
+      install_symbol(id, varType);
+      set_symbol(id, expr);
+      index = look_up_symbol(id);
+      // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
+      fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+      maxRegNum--;
     }
   ;
 
@@ -281,16 +274,27 @@ func_statements:
 func_statement:
     simple_statement
   | func_invocation
-  | if_statement else_statement
+  | if_statement
     {
-      doInst = true;
+      fprintf(f_asm, "out:\n");
+    }
+    else_statement
+    {
+      fprintf(f_asm, "out2:\n");
     }
   | if_statement
     {
-      doInst = true;
+      fprintf(f_asm, "out:\n");
+      fprintf(f_asm, "out2:\n");
     }
   | switch_statement
-  | while_statement
+  | {
+      fprintf(f_asm, "loop:\n");
+    }
+    while_statement
+    {
+      fprintf(f_asm, "out:\n");
+    }
   | do_while_statement
   | for_statement
   | return_statement
@@ -305,19 +309,16 @@ func_statement:
 simple_statement:
     ID '=' expression ';'
     {
-      if (doInst)
-      {
-        char *id;
-        int index;
-        int expr = $3;
+      char *id;
+      int index;
+      int expr = $3;
 
-        id = strtok($1, delimiter);
-        set_symbol($1, expr);
-        index = look_up_symbol(id);
-        // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
-        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
-        maxRegNum--;
-      }
+      id = strtok($1, delimiter);
+      set_symbol($1, expr);
+      index = look_up_symbol(id);
+      // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
+      fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+      maxRegNum--;
     }
   | ID stm_dimensions '=' expression ';'
   ;
@@ -338,35 +339,24 @@ func_invocation:
 if_statement:
     IF '(' expression ')' '{'
     {
-      int expr = $3;
-
-      if (expr == 0)
-      {
-        doInst = false;
-      }
-      else
-      {
-        doInst = true;
-      }
       maxRegNum--;
     }
-    func_contents '}'
-  | IF '(' expression ')' '{' '}'
+    func_contents
+    {
+      fprintf(f_asm, "  j out2\n");
+    }
+    '}'
+  | IF '(' expression ')' '{'
+    {
+      maxRegNum--;
+      fprintf(f_asm, "  j out2\n");
+    }
+    '}'
   ;
 
 else_statement:
-    ELSE '{'
-    {
-      doInst = !doInst;
-    }
-    func_contents '}'
-    {
-      doInst = true;
-    }
+    ELSE '{' func_contents '}'
   | ELSE '{' '}'
-    {
-
-    }
   ;
 
 switch_statement:
@@ -394,11 +384,20 @@ default_statement:
 while_statement:
     WHILE '(' expression ')' '{'
     {
-      fprintf(f_asm, "loop:\n");
-      int expr = $3;
+      maxRegNum--;
     }
     func_contents '}'
-  | WHILE '(' expression ')' '{' '}'
+    {
+      fprintf(f_asm, "  j loop\n");
+    }
+  | WHILE '(' expression ')' '{'
+    {
+      maxRegNum--;
+    }
+    '}'
+    {
+      fprintf(f_asm, "  j loop\n");
+    }
   ;
 
 do_while_statement:
@@ -433,22 +432,16 @@ continue_statement:
 digitalWrite_statement:
     DIGITALWRITE '(' expression ',' expression ')' ';'
     {
-      if (doInst)
-      {
-        fprintf(f_asm, "  bal	digitalWrite\n");
-        maxRegNum = maxRegNum - 2;
-      }
+      fprintf(f_asm, "  bal	digitalWrite\n");
+      maxRegNum = maxRegNum - 2;
     }
   ;
 
 delay_statement:
     DELAY '(' expression ')' ';'
     {
-      if (doInst)
-      {
-        fprintf(f_asm, "  bal	delay\n");
-        maxRegNum--;
-      }
+      fprintf(f_asm, "  bal	delay\n");
+      maxRegNum--;
     }
   ;
 
@@ -462,227 +455,181 @@ expressions:
 expression:
     CONSTANT
     {
-      if (doInst)
-      {
-        int num = $1;
+      int num = $1;
 
-        $$ = num;
-        fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
-      }
+      $$ = num;
+      fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
     }
   | '-' CONSTANT
     {
-      if (doInst)
-      {
-        int num = -1 * $2;
+      int num = -1 * $2;
 
-        $$ = num;
-        fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
-      }
+      $$ = num;
+      fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
     }
   | ID
     {
-      if (doInst)
-      {
-        int index;
-        char *id;
+      int index;
+      char *id;
 
-        id = strtok($1, delimiter);
-        index = look_up_symbol(id);
-        if (index >= 0)
-        {
-          $$ = table[index].value;
-          fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
-        }
+      id = strtok($1, delimiter);
+      index = look_up_symbol(id);
+      if (index >= 0)
+      {
+        $$ = table[index].value;
+        fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
       }
     }
   | '-' ID
     {
-      if (doInst)
-      {
-        int index;
-        char *id;
+      int index;
+      char *id;
 
-        id = strtok($2, delimiter);
-        index = look_up_symbol(id);
-        if (index >= 0)
-        {
-          $$ = -1 * table[index].value;
-          fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
-          fprintf(f_asm, "  movi $r%d, -1\n", maxRegNum + 1);
-          fprintf(f_asm, "  muli $r%d, $r%d, $r%d\n", maxRegNum, maxRegNum, maxRegNum + 1);
-        }
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index >= 0)
+      {
+        $$ = -1 * table[index].value;
+        fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
+        fprintf(f_asm, "  movi $r%d, -1\n", maxRegNum + 1);
+        fprintf(f_asm, "  muli $r%d, $r%d, $r%d\n", maxRegNum, maxRegNum, maxRegNum + 1);
       }
     }
   | ID stm_dimensions
     {
-      if (doInst)
-      {
-        $$ = 0;
-      }
+      $$ = 0;
     }
   | ID '(' expressions ')'
     {
-      if (doInst)
-      {
-        $$ = 0;
-      }
+      $$ = 0;
     }
   | ID '(' ')'
     {
-      if (doInst)
-      {
-        $$ = 0;
-      }
+      $$ = 0;
     }
   | expression '=' expression
     {
-      if (doInst)
-      {
-        $1 = $3;
-        $$ = $1;
-      }
+      $1 = $3;
+      $$ = $1;
     }
   | expression '+' expression
     {
-      if (doInst)
-      {
-        $$ = $1 + $3;
-        fprintf(f_asm, "  add $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
-        maxRegNum--;
-      }
+      $$ = $1 + $3;
+      fprintf(f_asm, "  add $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+      maxRegNum--;
     }
   | expression '-' expression
     {
-      if (doInst)
-      {
-        $$ = $1 - $3;
-        fprintf(f_asm, "  sub $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
-        maxRegNum--;
-      }
+      $$ = $1 - $3;
+      fprintf(f_asm, "  sub $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+      maxRegNum--;
     }
   | expression '*' expression
     {
-      if (doInst)
-      {
-        $$ = $1 * $3;
-        fprintf(f_asm, "  mul $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
-        maxRegNum--;
-      }
+      $$ = $1 * $3;
+      fprintf(f_asm, "  mul $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+      maxRegNum--;
     }
   | expression '/' expression
     {
-      if (doInst)
-      {
-        $$ = $1 / $3;
-        fprintf(f_asm, "  divsr $r%d, $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1, maxRegNum);
-        maxRegNum--;
-      }
+      $$ = $1 / $3;
+      fprintf(f_asm, "  divsr $r%d, $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1, maxRegNum);
+      maxRegNum--;
     }
   | expression '%' expression
   | expression LESSEQUAL expression
     {
-      if (doInst)
+      if ($1 <= $3)
       {
-        if ($1 <= $3)
-        {
-          $$ = 1;
-        }
-        else
-        {
-          $$ = 0;
-        }
-        maxRegNum--;
+        $$ = 1;
       }
+      else
+      {
+        $$ = 0;
+      }
+      fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1);
+      maxRegNum--;
+      fprintf(f_asm, "  bnez $r%d, out\n", maxRegNum);
     }
   | expression MOREEQUAL expression
     {
-      if (doInst)
+      if ($1 >= $3)
       {
-        if ($1 >= $3)
-        {
-          $$ = 1;
-        }
-        else
-        {
-          $$ = 0;
-        }
-        maxRegNum--;
+        $$ = 1;
       }
+      else
+      {
+        $$ = 0;
+      }
+      fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+      maxRegNum--;
+      fprintf(f_asm, "  bnez $r%d, out\n", maxRegNum);
     }
   | expression EQUALEQUAL expression
     {
-      if (doInst)
+      if ($1 == $3)
       {
-        if ($1 == $3)
-        {
-          $$ = 1;
-        }
-        else
-        {
-          $$ = 0;
-        }
-        maxRegNum--;
+        $$ = 1;
       }
+      else
+      {
+        $$ = 0;
+      }
+      fprintf(f_asm, "  bne $r%d, $r%d, out\n", maxRegNum - 1, maxRegNum);
+      maxRegNum--;
     }
   | expression NOTEQUAL expression
     {
-      if (doInst)
+      if ($1 != $3)
       {
-        if ($1 != $3)
-        {
-          $$ = 1;
-        }
-        else
-        {
-          $$ = 0;
-        }
-        maxRegNum--;
+        $$ = 1;
       }
+      else
+      {
+        $$ = 0;
+      }
+      fprintf(f_asm, "  beq $r%d, $r%d, out\n", maxRegNum - 1, maxRegNum);
+      maxRegNum--;
     }
   | expression '<' expression
     {
-      if (doInst)
+      if ($1 < $3)
       {
-        if ($1 < $3)
-        {
-          $$ = 1;
-        }
-        else
-        {
-          $$ = 0;
-        }
-        maxRegNum--;
+        $$ = 1;
       }
+      else
+      {
+        $$ = 0;
+      }
+      fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
+      maxRegNum--;
+      fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
     }
   | expression '>' expression
     {
-      if (doInst)
+      if ($1 > $3)
       {
-        if ($1 > $3)
-        {
-          $$ = 1;
-        }
-        else
-        {
-          $$ = 0;
-        }
-        maxRegNum--;
+        $$ = 1;
       }
+      else
+      {
+        $$ = 0;
+      }
+      fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1);
+      maxRegNum--;
+      fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
     }
   | '!' expression
     {
-      if (doInst)
+      if ($2 != 0)
       {
-        if ($2 != 0)
-        {
-          $$ = 0;
-        }
-        else
-        {
-          $$ = 1;
-        }
+        $$ = 0;
       }
+      else
+      {
+        $$ = 1;
+      }
+      fprintf(f_asm, "  bnez $r%d, out\n", maxRegNum);
     }
   | expression ANDAND expression
   | expression OROR expression
@@ -690,10 +637,7 @@ expression:
   | expression MINUSMINUS
   | '(' expression ')'
     {
-      if (doInst)
-      {
-        $$ = $2;
-      }
+      $$ = $2;
     }
   ;
 

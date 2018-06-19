@@ -98,7 +98,8 @@ void set_symbol(char *s, double val)
 /* Check if there is undefined function */
 void check_undefined_func()
 {
-  for (int i = cur_counter - 1; i >= 0; i--)
+  int i;
+  for (i = cur_counter - 1; i >= 0; i--)
   {
     if (table[i].type == FUNC_T)
     {

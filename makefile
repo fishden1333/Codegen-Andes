@@ -9,7 +9,7 @@
 all:
 	flex scanner.l
 	byacc -d -v parser.y
-	gcc -o codegen lex.yy.c y.tab.c sym_table.c
+	gcc -o codegen lex.yy.c y.tab.c sym_table.c -lm
 
 clean:
 	rm -f lex.yy.c y.tab.c y.tab.h codegen y.output assembly Blink.s

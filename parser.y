@@ -24,7 +24,6 @@
   char *delimiter = " +-*/=,;()"; // Used for strtok
   int maxRegNum = -1; // The max register number, -1: no register used
   int compExprNum = 0; // See how many expressions in the compare expression
-  bool inFuncDef = false; // See if in function definition
 %}
 
 %start program /* Starting symbol */
@@ -209,7 +208,35 @@ IDfunc_declarations:
 
 IDfunc_declaration:
     ID '(' parameters ')'
-  | ID '('')'
+    {
+      char *id;
+      int index;
+
+      id = strtok($1, delimiter);
+      index = look_up_symbol(id);
+      if (index >= 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be declared once\n", ++numLines, id);
+        exit(1);
+      }
+      install_symbol(id, FUNC_T);
+      set_symbol(id, 0);
+    }
+  | ID '(' ')'
+    {
+      char *id;
+      int index;
+
+      id = strtok($1, delimiter);
+      index = look_up_symbol(id);
+      if (index >= 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be declared once\n", ++numLines, id);
+        exit(1);
+      }
+      install_symbol(id, FUNC_T);
+      set_symbol(id, 0);
+    }
   ;
 
 parameters:
@@ -220,7 +247,24 @@ parameters:
 parameter:
     NONVOIDTYPE ID
     {
-      install_symbol($2, varType);
+      char *id;
+      int index;
+
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0)
+      {
+        install_symbol(id, varType);
+        set_symbol(id, 1);
+      }
+      else
+      {
+        if (table[index].value != 1)
+        {
+          fprintf(stderr, "Error at line %d: Function's definition must match its declaration\n", ++numLines);
+          exit(1);
+        }
+      }
     }
   | NONVOIDTYPE ID dcl_dimensions
   ;
@@ -292,7 +336,23 @@ CONSTANT:
 func_definition:
     NONVOIDTYPE ID '(' parameters ')' '{'
     {
+      char *id;
+      int index;
+
       cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
     }
     func_contents_without_return return_statement '}'
     {
@@ -306,7 +366,23 @@ func_definition:
     }
   | NONVOIDTYPE ID '(' ')' '{'
     {
+      char *id;
+      int index;
+
       cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
     }
     func_contents_without_return return_statement '}'
     {
@@ -318,7 +394,55 @@ func_definition:
       pop_up_symbol(cur_scope);
       cur_scope--;
     }
-  | NONVOIDTYPE ID '(' parameters ')' '{' return_statement '}'
+  | NONVOIDTYPE ID '(' parameters ')' '{'
+    {
+      char *id;
+      int index;
+
+      cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
+    }
+    return_statement '}'
+    {
+      if ($1 != $8)
+      {
+        fprintf(stderr, "Error at line %d: The return type should match the function's definition\n", ++numLines);
+        exit(1);
+      }
+    }
+  | NONVOIDTYPE ID '(' ')' '{'
+    {
+      char *id;
+      int index;
+
+      cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
+    }
+    return_statement '}'
     {
       if ($1 != $7)
       {
@@ -326,17 +450,25 @@ func_definition:
         exit(1);
       }
     }
-  | NONVOIDTYPE ID '(' ')' '{' return_statement '}'
-    {
-      if ($1 != $6)
-      {
-        fprintf(stderr, "Error at line %d: The return type should match the function's definition\n", ++numLines);
-        exit(1);
-      }
-    }
   | VOIDTYPE ID '(' parameters ')' '{'
     {
+      char *id;
+      int index;
+
       cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
     }
     func_contents '}'
     {
@@ -345,15 +477,71 @@ func_definition:
     }
   | VOIDTYPE ID '(' ')' '{'
     {
+      char *id;
+      int index;
+
       cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
     }
     func_contents '}'
     {
       pop_up_symbol(cur_scope);
       cur_scope--;
     }
-  | VOIDTYPE ID '(' parameters ')' '{' '}'
-  | VOIDTYPE ID '(' ')' '{' '}'
+  | VOIDTYPE ID '(' parameters ')' '{'
+    {
+      char *id;
+      int index;
+
+      cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
+    }
+    '}'
+  | VOIDTYPE ID '(' ')' '{'
+    {
+      char *id;
+      int index;
+
+      cur_scope++;
+      id = strtok($2, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0 && strcmp(id, "main") != 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s's declaration must appear before its definition\n", ++numLines, id);
+        exit(1);
+      }
+      if (table[index].value >= 1)
+      {
+        fprintf(stderr, "Error at line %d: Function %s can only be defined once\n", ++numLines, id);
+        exit(1);
+      }
+      set_symbol(id, 1);
+    }
+    '}'
   ;
 
 func_contents:
@@ -542,7 +730,31 @@ stm_dimension:
 
 func_invocation:
     ID '(' expressions ')' ';'
+    {
+      char *id;
+      int index;
+
+      id = strtok($1, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s must be declared or defined before invoked\n", ++numLines, id);
+        exit(1);
+      }
+    }
   | ID '(' ')' ';'
+    {
+      char *id;
+      int index;
+
+      id = strtok($1, delimiter);
+      index = look_up_symbol(id);
+      if (index < 0)
+      {
+        fprintf(stderr, "Error at line %d: Function %s must be declared or defined before invoked\n", ++numLines, id);
+        exit(1);
+      }
+    }
 
 if_statement:
     if_keyword '(' expression ')' '{'
@@ -742,6 +954,7 @@ return_statement:
       int exprType = checkType($2);
 
       $$ = exprType;
+      maxRegNum--;
     }
   ;
 
@@ -1175,9 +1388,11 @@ int main()
   {
     fprintf(stderr, "Can not open the file %s for writing.\n", "assembly");
   }
-
   fprintf(f_asm, "\n");
+
   yyparse();
+  check_undefined_func();
+
   printf("No syntax error!\n");
 
   return 0;

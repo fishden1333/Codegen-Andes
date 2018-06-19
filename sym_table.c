@@ -95,6 +95,23 @@ void set_symbol(char *s, double val)
   }
 }
 
+/* Check if there is undefined function */
+void check_undefined_func()
+{
+  for (int i = cur_counter - 1; i >= 0; i--)
+  {
+    if (table[i].type == FUNC_T)
+    {
+      if (table[i].value == 0)
+      {
+        char *s = table[i].name;
+        fprintf(stderr, "Error at line %d: Function %s hasn't been defined after declaration\n", ++numLines, s);
+        exit(1);
+      }
+    }
+  }
+}
+
 /* Makes a copy of a string with known length */
 char *copyn(int n, char *s)
 {

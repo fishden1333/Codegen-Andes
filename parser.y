@@ -5,7 +5,12 @@
   #include <stdio.h>
   #include <string.h>
   #include <stdlib.h>
+  #include <math.h>
   #include "sym_table.h"
+
+  #define CHAR_VAL 2147483647
+  #define BOOL_VAL 2147483646
+  #define STR_VAL 2147483645
 
   extern char *yytext; // The scanned token
   extern char line[1000];
@@ -16,10 +21,10 @@
   FILE *f_asm; // File used for generating assembly code
 
   int varType; // Variable type
-  bool isFunc; // See if the variable is a function name
   char *delimiter = " +-*/=,;()"; // Used for strtok
   int maxRegNum = -1; // The max register number, -1: no register used
   int compExprNum = 0; // See how many expressions in the compare expression
+  bool inFuncDef = false; // See if in function definition
 %}
 
 %start program /* Starting symbol */
@@ -41,6 +46,7 @@
 %token DIGITALWRITE DELAY
 
 %type <intVal> INT_CONSTANT BOOL_CONSTANT
+%type <intVal> INTTYPE DOUBLETYPE CHARTYPE BOOLTYPE VOIDTYPE NONVOIDTYPE return_statement
 %type <doubVal> DOUB_CONSTANT expression CONSTANT
 %type <charVal> CHAR_CONSTANT
 %type <strVal> ID STR_CONSTANT
@@ -110,29 +116,65 @@ ID_declaration:
     ID
     {
       char *id;
-      int index;
+      int index, value;
 
       id = strtok($1, delimiter);
       install_symbol(id, varType);
-      set_symbol(id, 0);
+      if (varType == CHAR_T)
+      {
+        set_symbol(id, CHAR_VAL);
+      }
+      else if (varType == BOOL_T)
+      {
+        set_symbol(id, BOOL_VAL);
+      }
+      else if (varType == STR_VAL)
+      {
+        set_symbol(id, STR_VAL);
+      }
+      else
+      {
+        set_symbol(id, 0);
+      }
       index = look_up_symbol(id);
-      fprintf(f_asm, "  movi $r%d, 0\n", ++maxRegNum);
-      fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
-      maxRegNum--;
+      value = table[index].value;
+      if (index >= 0)
+      {
+        fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, value);
+        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+        maxRegNum--;
+      }
+      else
+      {
+        fprintf(stderr, "Error at line %d: Variable %s is not declared or outside the compound statement\n", ++numLines, id);
+        exit(1);
+      }
     }
   | ID '=' expression
     {
-      int expr = $3;
       char *id;
-      int index;
+      int index, exprType;
 
       id = strtok($1, delimiter);
       install_symbol(id, varType);
-      set_symbol(id, expr);
+      exprType = checkType($3);
+      if (varType != exprType)
+      {
+        fprintf(stderr, "Error at line %d: The type of the left should be the same as the type of the right\n", ++numLines);
+        exit(1);
+      }
+      set_symbol(id, $3);
       index = look_up_symbol(id);
-      // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
-      fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
-      maxRegNum--;
+      if (index >= 0)
+      {
+        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+        maxRegNum--;
+      }
+      else
+      {
+        fprintf(stderr, "Error at line %d: Variable %s is not declared or outside the compound statement\n", ++numLines, id);
+        exit(1);
+      }
     }
   ;
 
@@ -201,18 +243,22 @@ NONVOIDTYPE:
     INTTYPE
     {
       varType = INT_T;
+      $$ = INT_T;
     }
   | DOUBLETYPE
     {
       varType = DOUBLE_T;
+      $$ = DOUBLE_T;
     }
   | CHARTYPE
     {
       varType = CHAR_T;
+      $$ = CHAR_T;
     }
   | BOOLTYPE
     {
       varType = BOOL_T;
+      $$ = BOOL_T;
     }
   ;
 
@@ -229,27 +275,83 @@ CONSTANT:
     }
   | CHAR_CONSTANT
     {
-      $$ = $1;
+      $$ = CHAR_VAL;
     }
   | BOOL_CONSTANT
     {
-      $$ = $1;
+      $$ = BOOL_VAL;
     }
   | STR_CONSTANT
     {
-      $$ = 0;
+      $$ = STR_VAL;
     }
   ;
 
 /* Function definition */
 
 func_definition:
-    NONVOIDTYPE ID '(' parameters ')' '{' func_contents '}'
-  | NONVOIDTYPE ID '(' ')' '{' func_contents '}'
-  | NONVOIDTYPE ID '(' parameters ')' '{' '}'
-  | NONVOIDTYPE ID '(' ')' '{' '}'
-  | VOIDTYPE ID '(' parameters ')' '{' func_contents '}'
-  | VOIDTYPE ID '(' ')' '{' func_contents '}'
+    NONVOIDTYPE ID '(' parameters ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents_without_return return_statement '}'
+    {
+      if ($1 != $9)
+      {
+        fprintf(stderr, "Error at line %d: The return type should match the function's definition\n", ++numLines);
+        exit(1);
+      }
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+  | NONVOIDTYPE ID '(' ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents_without_return return_statement '}'
+    {
+      if ($1 != $8)
+      {
+        fprintf(stderr, "Error at line %d: The return type should match the function's definition\n", ++numLines);
+        exit(1);
+      }
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+  | NONVOIDTYPE ID '(' parameters ')' '{' return_statement '}'
+    {
+      if ($1 != $7)
+      {
+        fprintf(stderr, "Error at line %d: The return type should match the function's definition\n", ++numLines);
+        exit(1);
+      }
+    }
+  | NONVOIDTYPE ID '(' ')' '{' return_statement '}'
+    {
+      if ($1 != $6)
+      {
+        fprintf(stderr, "Error at line %d: The return type should match the function's definition\n", ++numLines);
+        exit(1);
+      }
+    }
+  | VOIDTYPE ID '(' parameters ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents '}'
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+  | VOIDTYPE ID '(' ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents '}'
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
   | VOIDTYPE ID '(' parameters ')' '{' '}'
   | VOIDTYPE ID '(' ')' '{' '}'
   ;
@@ -258,6 +360,18 @@ func_contents:
     var_declarations func_statements
   | var_declarations
   | func_statements
+  ;
+
+func_contents_without_return:
+    var_declarations func_statements_without_return
+  | var_declarations
+  | func_statements_without_return
+  ;
+
+func_contents_with_break_cont:
+    var_declarations func_statements_with_break_cont
+  | var_declarations
+  | func_statements_with_break_cont
   ;
 
 var_declarations:
@@ -273,6 +387,92 @@ func_statements:
   ;
 
 func_statement:
+    func_statement_without_return
+  | return_statement
+  ;
+
+func_statements_without_return:
+    func_statements_without_return func_statement_without_return
+  | func_statement_without_return
+  ;
+
+func_statement_without_return:
+    simple_statement
+  | func_invocation
+  | if_statement
+    {
+      fprintf(f_asm, "out:\n");
+    }
+    else_statement
+    {
+      fprintf(f_asm, "out2:\n");
+    }
+  | if_statement
+    {
+      fprintf(f_asm, "out:\n");
+      fprintf(f_asm, "out2:\n");
+    }
+  | switch_statement
+  | {
+      fprintf(f_asm, "loop:\n");
+    }
+    while_statement
+    {
+      fprintf(f_asm, "out:\n");
+    }
+  | do_while_statement
+  | for_statement
+  | digitalWrite_statement
+  | delay_statement
+  | func_statement_without_return COMMENT
+  | func_statement_without_return PRAGMA
+  ;
+
+func_statements_with_break:
+    func_statements_with_break func_statement_with_break
+  | func_statement_with_break
+  ;
+
+func_statement_with_break:
+    simple_statement
+  | func_invocation
+  | if_statement
+    {
+      fprintf(f_asm, "out:\n");
+    }
+    else_statement
+    {
+      fprintf(f_asm, "out2:\n");
+    }
+  | if_statement
+    {
+      fprintf(f_asm, "out:\n");
+      fprintf(f_asm, "out2:\n");
+    }
+  | switch_statement
+  | {
+      fprintf(f_asm, "loop:\n");
+    }
+    while_statement
+    {
+      fprintf(f_asm, "out:\n");
+    }
+  | do_while_statement
+  | for_statement
+  | return_statement
+  | break_statement
+  | digitalWrite_statement
+  | delay_statement
+  | func_statement_with_break COMMENT
+  | func_statement_with_break PRAGMA
+  ;
+
+func_statements_with_break_cont:
+    func_statements_with_break_cont func_statement_with_break_cont
+  | func_statement_with_break_cont
+  ;
+
+func_statement_with_break_cont:
     simple_statement
   | func_invocation
   | if_statement
@@ -303,8 +503,8 @@ func_statement:
   | continue_statement
   | digitalWrite_statement
   | delay_statement
-  | func_statement COMMENT
-  | func_statement PRAGMA
+  | func_statement_with_break_cont COMMENT
+  | func_statement_with_break_cont PRAGMA
   ;
 
 simple_statement:
@@ -312,14 +512,21 @@ simple_statement:
     {
       char *id;
       int index;
-      int expr = $3;
 
       id = strtok($1, delimiter);
-      set_symbol($1, expr);
+      set_symbol($1, $3);
       index = look_up_symbol(id);
-      // fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, expr);
-      fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
-      maxRegNum--;
+      if (index >= 0)
+      {
+        fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
+        maxRegNum--;
+      }
+      else
+      {
+        fprintf(stderr, "Error at line %d: Variable %s is not declared or outside the compound statement\n", ++numLines, id);
+        exit(1);
+      }
+
     }
   | ID stm_dimensions '=' expression ';'
   ;
@@ -340,6 +547,7 @@ func_invocation:
 if_statement:
     if_keyword '(' expression ')' '{'
     {
+      cur_scope++;
       if (compExprNum == 1)
       {
         fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
@@ -349,16 +557,21 @@ if_statement:
     func_contents
     {
       fprintf(f_asm, "  j out2\n");
+      pop_up_symbol(cur_scope);
+      cur_scope--;
     }
     '}'
   | if_keyword '(' expression ')' '{'
     {
+      cur_scope++;
       if (compExprNum == 1)
       {
         fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
       }
       maxRegNum--;
       fprintf(f_asm, "  j out2\n");
+      pop_up_symbol(cur_scope);
+      cur_scope--;
     }
     '}'
   ;
@@ -371,47 +584,76 @@ if_keyword:
   ;
 
 else_statement:
-    ELSE '{' func_contents '}'
+    ELSE '{'
+    {
+      cur_scope++;
+    }
+    func_contents '}'
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
   | ELSE '{' '}'
   ;
 
 switch_statement:
-    SWITCH '(' ID ')' '{' case_statements default_statement '}'
-  | SWITCH '(' ID ')' '{' case_statements '}'
+    SWITCH '(' ID ')' '{'
+    {
+      cur_scope++;
+    }
+    switch_option
+  ;
+
+switch_option:
+    case_statements default_statement '}'
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+  | case_statements '}'
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
   ;
 
 case_statements:
+    case_statements default_statement
     case_statements case_statement
   | case_statement
   ;
 
 case_statement:
-    CASE INT_CONSTANT ':' func_statements
+    CASE INT_CONSTANT ':' func_statements_with_break
   | CASE INT_CONSTANT ':'
-  | CASE CHAR_CONSTANT ':' func_statements
+  | CASE CHAR_CONSTANT ':' func_statements_with_break
   | CASE CHAR_CONSTANT ':'
   ;
 
 default_statement:
-    DEFAULT ':' func_statements
+    DEFAULT ':' func_statements_with_break
   | DEFAULT ':'
   ;
 
 while_statement:
     while_keyword '(' expression ')' '{'
     {
+      cur_scope++;
       if (compExprNum == 1)
       {
         fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
       }
       maxRegNum--;
     }
-    func_contents '}'
+    func_contents_with_break_cont '}'
     {
       fprintf(f_asm, "  j loop\n");
+      pop_up_symbol(cur_scope);
+      cur_scope--;
     }
   | while_keyword '(' expression ')' '{'
     {
+      cur_scope++;
       if (compExprNum == 1)
       {
         fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
@@ -421,6 +663,8 @@ while_statement:
     '}'
     {
       fprintf(f_asm, "  j loop\n");
+      pop_up_symbol(cur_scope);
+      cur_scope--;
     }
   ;
 
@@ -432,24 +676,73 @@ while_keyword:
   ;
 
 do_while_statement:
-    DO '{' func_contents '}' WHILE '(' expression ')' ';'
+    DO '{'
+    {
+      cur_scope++;
+    }
+    func_contents_with_break_cont
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+    '}' WHILE '(' expression ')' ';'
   | DO '{' '}' WHILE '(' expression ')' ';'
   ;
 
 for_statement:
-    FOR '(' expression ';' expression ';' expression ')' '{' func_contents '}'
+    FOR '(' expression ';' expression ';' expression ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents_with_break_cont
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+    '}'
   | FOR '(' expression ';' expression ';' expression ')' '{' '}'
-  | FOR '(' ';' expression ';' expression ')' '{' func_contents '}'
+  | FOR '(' ';' expression ';' expression ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents_with_break_cont
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+    '}'
   | FOR '(' ';' expression ';' expression ')' '{' '}'
-  | FOR '(' expression ';' ';' expression ')' '{' func_contents '}'
+  | FOR '(' expression ';' ';' expression ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents_with_break_cont
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+    '}'
   | FOR '(' expression ';' ';' expression ')' '{' '}'
-  | FOR '(' expression ';' expression ';' ')' '{' func_contents '}'
+  | FOR '(' expression ';' expression ';' ')' '{'
+    {
+      cur_scope++;
+    }
+    func_contents_with_break_cont
+    {
+      pop_up_symbol(cur_scope);
+      cur_scope--;
+    }
+    '}'
   | FOR '(' expression ';' expression ';' ')' '{' '}'
   ;
 
 return_statement:
     RETURN expression ';'
-  | RETURN ';'
+    {
+      int exprType = checkType($2);
+
+      $$ = exprType;
+    }
   ;
 
 break_statement:
@@ -488,7 +781,7 @@ expression:
     {
       int num = $1;
 
-      $$ = num;
+      $$ = $1;
       fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
       compExprNum++;
     }
@@ -496,7 +789,7 @@ expression:
     {
       int num = -1 * $2;
 
-      $$ = num;
+      $$ = -1 * $2;
       fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
       compExprNum++;
     }
@@ -513,6 +806,11 @@ expression:
         fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
         compExprNum++;
       }
+      else
+      {
+        fprintf(stderr, "Error at line %d: Variable %s is not declared or outside the compound statement\n", ++numLines, id);
+        exit(1);
+      }
     }
   | '-' ID
     {
@@ -528,6 +826,11 @@ expression:
         fprintf(f_asm, "  movi $r%d, -1\n", maxRegNum + 1);
         fprintf(f_asm, "  muli $r%d, $r%d, $r%d\n", maxRegNum, maxRegNum, maxRegNum + 1);
         compExprNum++;
+      }
+      else
+      {
+        fprintf(stderr, "Error at line %d: Variable %s is not declared or outside the compound statement\n", ++numLines, id);
+        exit(1);
       }
     }
   | ID stm_dimensions
@@ -550,29 +853,105 @@ expression:
     }
   | expression '+' expression
     {
+      int type1, type2;
+
+      type1 = checkType($1);
+      type2 = checkType($3);
+      if (type1 != INT_T && type1 != DOUBLE_T && type2 != INT_T && type2 != DOUBLE_T)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be either integer or double\n", ++numLines);
+        exit(1);
+      }
+      if (type1 != type2)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be the same\n", ++numLines);
+        exit(1);
+      }
+
       $$ = $1 + $3;
       fprintf(f_asm, "  add $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
       maxRegNum--;
     }
   | expression '-' expression
     {
+      int type1, type2;
+
+      type1 = checkType($1);
+      type2 = checkType($3);
+      if (type1 != INT_T && type1 != DOUBLE_T && type2 != INT_T && type2 != DOUBLE_T)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be either integer or double\n", ++numLines);
+        exit(1);
+      }
+      if (type1 != type2)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be the same\n", ++numLines);
+        exit(1);
+      }
+
       $$ = $1 - $3;
       fprintf(f_asm, "  sub $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
       maxRegNum--;
     }
   | expression '*' expression
     {
+      int type1, type2;
+
+      type1 = checkType($1);
+      type2 = checkType($3);
+      if (type1 != INT_T && type1 != DOUBLE_T && type2 != INT_T && type2 != DOUBLE_T)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be either integer or double\n", ++numLines);
+        exit(1);
+      }
+      if (type1 != type2)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be the same\n", ++numLines);
+        exit(1);
+      }
+
       $$ = $1 * $3;
       fprintf(f_asm, "  mul $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
       maxRegNum--;
     }
   | expression '/' expression
     {
+      int type1, type2;
+
+      type1 = checkType($1);
+      type2 = checkType($3);
+      if (type1 != INT_T && type1 != DOUBLE_T && type2 != INT_T && type2 != DOUBLE_T)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be either integer or double\n", ++numLines);
+        exit(1);
+      }
+      if (type1 != type2)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be the same\n", ++numLines);
+        exit(1);
+      }
+
       $$ = $1 / $3;
       fprintf(f_asm, "  divsr $r%d, $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1, maxRegNum);
       maxRegNum--;
     }
   | expression '%' expression
+    {
+      int type1, type2;
+
+      type1 = checkType($1);
+      type2 = checkType($3);
+      if (type1 != type2)
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be the same\n", ++numLines);
+        exit(1);
+      }
+      if ((type1 != INT_T && type1 != DOUBLE_T) || (type2 != INT_T && type2 != DOUBLE_T))
+      {
+        fprintf(stderr, "Error at line %d: Operands' types must be either integer or double\n", ++numLines);
+        exit(1);
+      }
+    }
   | expression LESSEQUAL expression
     {
       if ($1 <= $3)
@@ -759,6 +1138,33 @@ comment_content:
   ;
 
 %%
+
+int checkType(double val)
+{
+  int type;
+
+  if (fabs(round(val) - CHAR_VAL) <= 0.00001)
+  {
+    type = CHAR_T;
+  }
+  else if (fabs(round(val) - BOOL_VAL) <= 0.00001)
+  {
+    type = BOOL_T;
+  }
+  else if (fabs(round(val) - STR_VAL) <= 0.00001)
+  {
+    type = STR_T;
+  }
+  else if (fabs(round(val) - val) <= 0.00001)
+  {
+    type = INT_T;
+  }
+  else
+  {
+    type = DOUBLE_T;
+  }
+  return type;
+}
 
 int main()
 {

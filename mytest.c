@@ -1,9 +1,16 @@
+double bd;
+
+
+int aaa(int d)
+{
+  return false;
+}
+
 int main()
 {
-  int a = 3;
-  while (a)
-  {
-    break;
-  }
+  int a;
+  bool b;
+
+
   return 0;
 }

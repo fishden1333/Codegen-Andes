@@ -3,9 +3,11 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "sym_table.h"
 
 extern FILE *f_asm;
+  extern int numLines;
 
 int cur_scope = 1; // Current global / local scope
 int cur_counter = 0; // Current variable count
@@ -23,10 +25,16 @@ void install_symbol(char *s, int type)
 {
   if (cur_counter >= MAX_TABLE_SIZE)
   {
-    printf("Symbol Table full.\n");
+    fprintf(stderr, "Symbol Table is full\n");
   }
   else
   {
+    int index = look_up_symbol(s);
+    if (index >= 0)
+    {
+      fprintf(stderr, "Error at line %d: Variable %s can't be declared more than once\n", ++numLines, s);
+      exit(1);
+    }
     table[cur_counter].name = copys(s);
     table[cur_counter].type = type;
     table[cur_counter].scope = cur_scope;
@@ -40,21 +48,18 @@ int look_up_symbol(char *s)
 {
   int i;
 
-  if (cur_counter == 0)
-  {
-    printf("No variables.\n");
-    return(-1);
-  }
   for (i = cur_counter - 1; i >= 0; i--)
   {
     if (!strcmp(s, table[i].name))
     {
-      // printf("Find variable: %s\n", table[i].name);
-      return(i);
+      if (table[i].scope > cur_scope)
+      {
+        break;
+      }
+      return i;
     }
   }
-  printf("Variable not found.\n");
-  return(-1);
+  return -1;
  }
 
 /* Pop up symbols of the given scope from the symbol table */

@@ -5,6 +5,7 @@
 #define DOUBLE_T 2
 #define CHAR_T 3
 #define BOOL_T 4
+#define STR_T 5
 
 struct symbol_entry {
    char *name;

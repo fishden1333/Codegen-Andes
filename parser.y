@@ -19,6 +19,7 @@
   bool isFunc; // See if the variable is a function name
   char *delimiter = " +-*/=,;()"; // Used for strtok
   int maxRegNum = -1; // The max register number, -1: no register used
+  int compExprNum = 0; // See how many expressions in the compare expression
 %}
 
 %start program /* Starting symbol */
@@ -115,7 +116,7 @@ ID_declaration:
       install_symbol(id, varType);
       set_symbol(id, 0);
       index = look_up_symbol(id);
-      // fprintf(f_asm, "  movi $r%d, 0\n", ++maxRegNum);
+      fprintf(f_asm, "  movi $r%d, 0\n", ++maxRegNum);
       fprintf(f_asm, "  swi $r%d, [$sp + (%d)]\n", maxRegNum, table[index].offset * 4);
       maxRegNum--;
     }
@@ -337,8 +338,12 @@ func_invocation:
   | ID '(' ')' ';'
 
 if_statement:
-    IF '(' expression ')' '{'
+    if_keyword '(' expression ')' '{'
     {
+      if (compExprNum == 1)
+      {
+        fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
+      }
       maxRegNum--;
     }
     func_contents
@@ -346,12 +351,23 @@ if_statement:
       fprintf(f_asm, "  j out2\n");
     }
     '}'
-  | IF '(' expression ')' '{'
+  | if_keyword '(' expression ')' '{'
     {
+      if (compExprNum == 1)
+      {
+        fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
+      }
       maxRegNum--;
       fprintf(f_asm, "  j out2\n");
     }
     '}'
+  ;
+
+if_keyword:
+    IF
+    {
+      compExprNum = 0;
+    }
   ;
 
 else_statement:
@@ -382,21 +398,36 @@ default_statement:
   ;
 
 while_statement:
-    WHILE '(' expression ')' '{'
+    while_keyword '(' expression ')' '{'
     {
+      if (compExprNum == 1)
+      {
+        fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
+      }
       maxRegNum--;
     }
     func_contents '}'
     {
       fprintf(f_asm, "  j loop\n");
     }
-  | WHILE '(' expression ')' '{'
+  | while_keyword '(' expression ')' '{'
     {
+      if (compExprNum == 1)
+      {
+        fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
+      }
       maxRegNum--;
     }
     '}'
     {
       fprintf(f_asm, "  j loop\n");
+    }
+  ;
+
+while_keyword:
+    WHILE
+    {
+      compExprNum = 0;
     }
   ;
 
@@ -459,6 +490,7 @@ expression:
 
       $$ = num;
       fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
+      compExprNum++;
     }
   | '-' CONSTANT
     {
@@ -466,6 +498,7 @@ expression:
 
       $$ = num;
       fprintf(f_asm, "  movi $r%d, %d\n", ++maxRegNum, num);
+      compExprNum++;
     }
   | ID
     {
@@ -478,6 +511,7 @@ expression:
       {
         $$ = table[index].value;
         fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
+        compExprNum++;
       }
     }
   | '-' ID
@@ -493,6 +527,7 @@ expression:
         fprintf(f_asm, "  lwi $r%d, [$sp + (%d)]\n", ++maxRegNum, table[index].offset * 4);
         fprintf(f_asm, "  movi $r%d, -1\n", maxRegNum + 1);
         fprintf(f_asm, "  muli $r%d, $r%d, $r%d\n", maxRegNum, maxRegNum, maxRegNum + 1);
+        compExprNum++;
       }
     }
   | ID stm_dimensions
@@ -511,6 +546,7 @@ expression:
     {
       $1 = $3;
       $$ = $1;
+      compExprNum++;
     }
   | expression '+' expression
     {
@@ -550,6 +586,7 @@ expression:
       fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1);
       maxRegNum--;
       fprintf(f_asm, "  bnez $r%d, out\n", maxRegNum);
+      compExprNum++;
     }
   | expression MOREEQUAL expression
     {
@@ -564,6 +601,7 @@ expression:
       fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
       maxRegNum--;
       fprintf(f_asm, "  bnez $r%d, out\n", maxRegNum);
+      compExprNum++;
     }
   | expression EQUALEQUAL expression
     {
@@ -577,6 +615,7 @@ expression:
       }
       fprintf(f_asm, "  bne $r%d, $r%d, out\n", maxRegNum - 1, maxRegNum);
       maxRegNum--;
+      compExprNum++;
     }
   | expression NOTEQUAL expression
     {
@@ -590,6 +629,7 @@ expression:
       }
       fprintf(f_asm, "  beq $r%d, $r%d, out\n", maxRegNum - 1, maxRegNum);
       maxRegNum--;
+      compExprNum++;
     }
   | expression '<' expression
     {
@@ -604,6 +644,7 @@ expression:
       fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum - 1, maxRegNum);
       maxRegNum--;
       fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
+      compExprNum++;
     }
   | expression '>' expression
     {
@@ -618,6 +659,7 @@ expression:
       fprintf(f_asm, "  slt $r%d, $r%d, $r%d\n", maxRegNum - 1, maxRegNum, maxRegNum - 1);
       maxRegNum--;
       fprintf(f_asm, "  beqz $r%d, out\n", maxRegNum);
+      compExprNum++;
     }
   | '!' expression
     {
@@ -630,6 +672,7 @@ expression:
         $$ = 1;
       }
       fprintf(f_asm, "  bnez $r%d, out\n", maxRegNum);
+      compExprNum = compExprNum + 2;
     }
   | expression ANDAND expression
   | expression OROR expression
